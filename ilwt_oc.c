@@ -25,6 +25,7 @@
 #include <android/log.h>
 
 #define CONFIG_FILE "/system/etc/ilwt_oc/ilwt_oc.conf"
+#define CONFIG_FILE_SDCARD "/sdcard/ILWT/ilwt_oc/ilwt_oc.conf"
 
 #define SYS_CGOV_C0 "/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor"
 #define SYS_CMAX_C0 "/sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq"
@@ -39,8 +40,12 @@
 
 #define SYS_BATT_TEMP "/sys/class/power_supply/battery/batt_temp"
 #define SYS_BATT_CAP "/sys/class/power_supply/battery/capacity"
+#define SYS_CHARGE "/sys/class/power_supply/battery/charging_enabled"
 
 #define APPNAME "ILWT_OC"
+
+// 0: SD Card, 1: /system
+int configFile = 0;
 
 typedef struct s_ocConfig
 {
@@ -61,6 +66,10 @@ typedef struct s_ocConfig
   char battery_cap_governor[30];
   char battery_cap_min_freq[30];
   char battery_cap_max_freq[30];
+  
+  char charge_governor[30];
+  char charge_min_freq[30];
+  char charge_max_freq[30];
 } ocConfig;
 
 void my_trim(char *str)
@@ -129,10 +138,22 @@ int read_from_file(char *path, int len, char *result)
 
 int get_config_value(char *config_key, char *reference)
 {
-	FILE *config_file = fopen(CONFIG_FILE, "r");
+	FILE *config_file;
+	if (configFile == 1)
+		config_file = fopen(CONFIG_FILE, "r");
+	else {
+		config_file = fopen(CONFIG_FILE_SDCARD, "r");
+		if (config_file == NULL) {
+			__android_log_write(ANDROID_LOG_INFO, APPNAME, "No config file in SD card.");
+			config_file = fopen(CONFIG_FILE, "r");
+			configFile = 1;
+			__android_log_write(ANDROID_LOG_INFO, APPNAME, "Reading config from system partition.");
+		}
+	}
+	
 	if (config_file == NULL) {
 		__android_log_write(ANDROID_LOG_INFO, APPNAME, "Cannot open configuration file for input.");
-		return -1;
+		config_file = fopen(CONFIG_FILE, "r");
 	}
 	
 	char line[30];
@@ -169,6 +190,11 @@ int load_config(ocConfig *conf)
 {      
   if (conf == NULL)
     return -1;
+
+  if (configFile == 1)
+	__android_log_write(ANDROID_LOG_INFO, APPNAME, "Reading config from system partition.");
+  else
+    __android_log_write(ANDROID_LOG_INFO, APPNAME, "Reading config from SD card.");
 	
   if (get_config_value("wake_min_freq=", conf->wake_min_freq) == -1)
     return -1;
@@ -208,6 +234,13 @@ int load_config(ocConfig *conf)
     return -1;
   if (get_config_value("battery_cap_governor=", conf->battery_cap_governor) == -1)
     return -1;
+	
+  if (get_config_value("charge_min_freq=", conf->charge_min_freq) == -1)
+    return -1;
+  if (get_config_value("charge_max_freq=", conf->charge_max_freq) == -1)
+    return -1;
+  if (get_config_value("charge_governor=", conf->charge_governor) == -1)
+    return -1;
 
   return 0;
 }
@@ -226,19 +259,44 @@ int check_sleep()
 	return 0;
 }
 
+int check_charge()
+{
+	char input_buffer[2];
+	input_buffer[0] = '\0';
+      
+    if (read_from_file(SYS_CHARGE, 2, input_buffer) == -1)
+		return 1;
+	  
+	if (strcmp(input_buffer, "0") == 0)
+		return 0;
+	
+	return 2;
+}
+
 int main (int argc, char **argv)
 {
   ocConfig  conf;
   pid_t pid, sid;
   char input_buffer[9];
   int asleep = 0;
+  int charging = 0;
   
   __android_log_write(ANDROID_LOG_INFO, APPNAME, "Starting service.");
   if (load_config(&conf) == -1)
-  {          
-    __android_log_write(ANDROID_LOG_ERROR, APPNAME, "Unable to load configuration. Stopping.");
-    return 1;
+  {
+	if (configFile == 0) {
+		configFile = 1;
+		if (load_config(&conf) == -1) {
+			__android_log_write(ANDROID_LOG_ERROR, APPNAME, "Unable to load configuration. Stopping.");
+			return 1;
+		}
+	}
+	else {
+		__android_log_write(ANDROID_LOG_ERROR, APPNAME, "Unable to load configuration. Stopping.");
+		return 1;
+	}
   }
+  
   input_buffer[0] = 0;
     
   pid = fork();
@@ -294,9 +352,12 @@ int main (int argc, char **argv)
 		  set_cpu_params(conf.battery_temp_governor, conf.battery_temp_min_freq, conf.battery_temp_max_freq);
 		  
 		  while (asleep != 2 && atoi(input_buffer) >= atoi(conf.battery_temp) - 10) {
-			sleep(1);
-			
 			asleep = check_sleep();
+			if (asleep == 1)
+			{
+				__android_log_write(ANDROID_LOG_ERROR, APPNAME, "Unable to get data from file. Cannot continue.");
+				return 1;
+			}
 			
 			input_buffer[0] = '\0';	
 			
@@ -308,6 +369,17 @@ int main (int argc, char **argv)
 		  }
 		}
 		else {
+			charging = check_charge();
+			if (charging == 1)
+			{
+				__android_log_write(ANDROID_LOG_ERROR, APPNAME, "Unable to get data from file. Cannot continue.");
+				return 1;
+			}
+			else if (charging == 2) {
+				__android_log_write(ANDROID_LOG_INFO, APPNAME, "Setting charge profile.");
+				set_cpu_params(conf.charge_governor, conf.charge_min_freq, conf.charge_max_freq);
+			}
+		
 			input_buffer[0] = '\0';	
 		
 			if (read_from_file(SYS_BATT_CAP, 4, input_buffer) == -1)
@@ -315,14 +387,24 @@ int main (int argc, char **argv)
 			  __android_log_write(ANDROID_LOG_ERROR, APPNAME, "Unable to get data from file. Cannot continue.");
 			  return 1;
 			}
-			if (atoi(input_buffer) <= atoi(conf.battery_cap))
+			if (charging != 2 && atoi(input_buffer) <= atoi(conf.battery_cap))
 			{
 			  __android_log_write(ANDROID_LOG_INFO, APPNAME, "Setting capacity profile.");
 			  set_cpu_params(conf.battery_cap_governor, conf.battery_cap_min_freq, conf.battery_cap_max_freq);
-			  while (asleep != 2 && atoi(input_buffer) <= atoi(conf.battery_cap)) {
-				sleep(1);
-				
+			  while (asleep != 2 && charging != 2 && atoi(input_buffer) <= atoi(conf.battery_cap)) {				
 				asleep = check_sleep();
+				if (asleep == 1)
+				{
+					__android_log_write(ANDROID_LOG_ERROR, APPNAME, "Unable to get data from file. Cannot continue.");
+					return 1;
+				}
+				
+				charging = check_charge();
+				if (charging == 1)
+				{
+					__android_log_write(ANDROID_LOG_ERROR, APPNAME, "Unable to get data from file. Cannot continue.");
+					return 1;
+				}
 				
 				input_buffer[0] = '\0';	
 				
@@ -333,7 +415,7 @@ int main (int argc, char **argv)
 				}
 			  }
 			}
-			else
+			else if (charging != 2)
 			{
 				__android_log_write(ANDROID_LOG_INFO, APPNAME, "Setting awake profile.");
 				set_cpu_params(conf.wake_governor, conf.wake_min_freq, conf.wake_max_freq);
