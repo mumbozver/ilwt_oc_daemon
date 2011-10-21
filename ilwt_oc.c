@@ -293,7 +293,7 @@ int main (int argc, char **argv)
 		  __android_log_write(ANDROID_LOG_INFO, APPNAME, "Setting heat profile.");
 		  set_cpu_params(conf.battery_temp_governor, conf.battery_temp_min_freq, conf.battery_temp_max_freq);
 		  
-		  while (asleep != 2 && atoi(input_buffer) >= atoi(conf.battery_temp) + 10) {
+		  while (asleep != 2 && atoi(input_buffer) >= atoi(conf.battery_temp) - 10) {
 			sleep(1);
 			
 			asleep = check_sleep();
