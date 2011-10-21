@@ -24,7 +24,7 @@
 #include <sys/stat.h>
 #include <android/log.h>
 
-#define CONFIG_FILE "/system/etc/ilwt_oc/ilwt_oc_daemon.conf"
+#define CONFIG_FILE "/system/etc/ilwt_oc/ilwt_oc.conf"
 
 #define SYS_CGOV_C0 "/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor"
 #define SYS_CMAX_C0 "/sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq"
