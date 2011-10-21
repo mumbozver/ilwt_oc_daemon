@@ -24,7 +24,7 @@
 #include <sys/stat.h>
 #include <android/log.h>
 
-#define CONFIG_ROOT "/system/etc/ilwt_oc/"
+#define CONFIG_FILE "/system/etc/ilwt_oc/ilwt_oc_daemon.conf"
 
 #define SYS_CGOV_C0 "/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor"
 #define SYS_CMAX_C0 "/sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq"
@@ -85,20 +85,6 @@ int write_to_file(char *path, char *value)
   return res;
 }
 
-int read_from_file(char *path, int len, char *result)
-{
-  FILE *fd;
-  int res = 0;
-  
-  fd = fopen(path, "r");
-  if (fd == NULL)
-    return -1;
-  if (fgets(result, len, fd) == NULL)
-    res = -1;
-  fclose(fd);
-  return res;
-}
-
 int set_cpu_params(char *governor, char *min_freq, char *max_freq)
 {
     if (write_to_file(SYS_CGOV_C0, governor) != 0)
@@ -127,51 +113,100 @@ int set_cpu_params(char *governor, char *min_freq, char *max_freq)
     return 0;
 }
 
-int get_config_value(char *config_key, char *reference)
+int read_from_file(char *path, int len, char *result)
 {
-    char config_path[60];
-    
-    strcpy(config_path, CONFIG_ROOT);
-    strcat(config_path, config_key);
-
-    return read_from_file(config_path, 30, reference);
+  FILE *fd;
+  int res = 0;
+  
+  fd = fopen(path, "r");
+  if (fd == NULL)
+    return -1;
+  if (fgets(result, len, fd) == NULL)
+    res = -1;
+  fclose(fd);
+  return res;
 }
 
-int  load_config(ocConfig *conf)
+int get_config_value(char *config_key, char *reference)
+{
+	FILE *config_file = fopen(CONFIG_FILE, "r");
+	if (config_file == NULL) {
+		__android_log_write(ANDROID_LOG_INFO, APPNAME, "Cannot open configuration file for input.");
+		return -1;
+	}
+	
+	char line[30];
+	char log[40];
+	char temp[30];
+	int res = -1;
+	while (fgets(line, sizeof line, config_file)) {
+		if (strncmp(line, config_key, strlen (config_key)) == 0) {
+			strcpy(temp, config_key);
+			strcat(temp, "%s");
+
+			if (sscanf(line, temp, reference)) {
+				strcpy(log, "Found ");
+				strcat(log, config_key);
+				strcat(log, reference);
+				__android_log_write(ANDROID_LOG_INFO, APPNAME, log);
+				res = 0;
+				break;
+			}
+		}
+	}
+
+	fclose(config_file);
+	
+	if (res == -1) {
+		strcpy(log, "Could not find ");
+		strcat(log, config_key);
+		__android_log_write(ANDROID_LOG_INFO, APPNAME, log);
+	}
+    return res;
+}
+
+int load_config(ocConfig *conf)
 {      
   if (conf == NULL)
     return -1;
 	
-  if (get_config_value("wake_min_freq", conf->wake_min_freq) == -1)
+  if (get_config_value("wake_min_freq=", conf->wake_min_freq) == -1)
     return -1;
-  if (get_config_value("wake_max_freq", conf->wake_max_freq) == -1)
+  if (get_config_value("wake_max_freq=", conf->wake_max_freq) == -1)
     return -1;
-  if (get_config_value("wake_governor", conf->wake_governor) == -1)
+  if (get_config_value("wake_governor=", conf->wake_governor) == -1)
+    return -1;
+	
+   if (get_config_value("wake_min_freq=", conf->wake_min_freq) == -1)
+    return -1;
+  if (get_config_value("wake_max_freq=", conf->wake_max_freq) == -1)
+    return -1;
+  if (get_config_value("wake_governor=", conf->wake_governor) == -1)
     return -1;
 
-  if (get_config_value("sleep_min_freq", conf->sleep_min_freq) == -1)
+  if (get_config_value("sleep_min_freq=", conf->sleep_min_freq) == -1)
     return -1;
-  if (get_config_value("sleep_max_freq", conf->sleep_max_freq) == -1)
+  if (get_config_value("sleep_max_freq=", conf->sleep_max_freq) == -1)
     return -1;
-  if (get_config_value("sleep_governor", conf->sleep_governor) == -1)
-    return -1;
-	
-  if (get_config_value("battery_temp", conf->battery_temp) == -1)
-    return -1;
-  if (get_config_value("battery_temp_governor", conf->battery_temp_governor) == -1)
-    return -1;
-  if (get_config_value("battery_temp_min_freq", conf->battery_temp_min_freq) == -1)
-    return -1;
-  if (get_config_value("battery_temp_max_freq", conf->battery_temp_max_freq) == -1)
+  if (get_config_value("sleep_governor=", conf->sleep_governor) == -1)
     return -1;
 	
-  if (get_config_value("battery_cap", conf->battery_cap) == -1)
+  if (get_config_value("battery_temp=", conf->battery_temp) == -1)
     return -1;
-  if (get_config_value("battery_cap_governor", conf->battery_cap_governor) == -1)
+  if (get_config_value("battery_temp_min_freq=", conf->battery_temp_min_freq) == -1)
     return -1;
-  if (get_config_value("battery_cap_min_freq", conf->battery_cap_min_freq) == -1)
+  if (get_config_value("battery_temp_max_freq=", conf->battery_temp_max_freq) == -1)
     return -1;
-  if (get_config_value("battery_cap_max_freq", conf->battery_cap_max_freq) == -1)
+  if (get_config_value("battery_temp_governor=", conf->battery_temp_governor) == -1)
+    return -1;
+	
+  if (get_config_value("battery_cap=", conf->battery_cap) == -1)
+    return -1;
+  if (get_config_value("battery_cap_min_freq=", conf->battery_cap_min_freq) == -1)
+    return -1;
+  if (get_config_value("battery_cap_max_freq=", conf->battery_cap_max_freq) == -1)
+    return -1;
+  if (get_config_value("battery_cap_governor=", conf->battery_cap_governor) == -1)
     return -1;
 
   return 0;
@@ -258,7 +293,7 @@ int main (int argc, char **argv)
 		  __android_log_write(ANDROID_LOG_INFO, APPNAME, "Setting heat profile.");
 		  set_cpu_params(conf.battery_temp_governor, conf.battery_temp_min_freq, conf.battery_temp_max_freq);
 		  
-		  while (asleep != 2 && atoi(input_buffer) >= atoi(conf.battery_temp) + 15) {
+		  while (asleep != 2 && atoi(input_buffer) >= atoi(conf.battery_temp) + 10) {
 			sleep(1);
 			
 			asleep = check_sleep();
