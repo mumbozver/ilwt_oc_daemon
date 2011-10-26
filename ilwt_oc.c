@@ -24,8 +24,8 @@
 #include <sys/stat.h>
 #include <android/log.h>
 
-#define CONFIG_FILE "/system/etc/ilwt_oc/ilwt_oc.conf"
-#define CONFIG_FILE_SDCARD "/mnt/sdcard/ILWT/ilwt_oc/ilwt_oc.conf"
+#define CONFIG_FILE "/system/ilwt/ilwt_oc.conf"
+#define CONFIG_FILE_SDCARD "/mnt/sdcard/ILWT/ilwt_oc.conf"
 
 #define SYS_CGOV_C0 "/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor"
 #define SYS_CMAX_C0 "/sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq"
@@ -314,6 +314,20 @@ int main (int argc, char **argv)
   close(STDIN_FILENO);
   close(STDOUT_FILENO);
   close(STDERR_FILENO);
+  
+  
+  input_buffer[0] = '\0';
+  
+  if (read_from_file(SYS_WAKE, 6, input_buffer) == -1)
+  {                  
+    __android_log_write(ANDROID_LOG_ERROR, APPNAME, "Unable to get data from file. Cannot continue.");
+    return 1;
+  }
+  if (strcmp(input_buffer, "awake") == 0)
+  {
+    __android_log_write(ANDROID_LOG_INFO, APPNAME, "Setting awake profile for boot sequence.");
+    set_cpu_params(conf.wake_governor, conf.wake_min_freq, conf.wake_max_freq);
+  }
     
   while (1)
   {
