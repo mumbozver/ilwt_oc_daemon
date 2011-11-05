@@ -31,7 +31,6 @@
 #define SYS_CMAX_C0 "/sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq"
 #define SYS_CMIN_C0 "/sys/devices/system/cpu/cpu0/cpufreq/scaling_min_freq"
 
-#define SYS_ONLI_C1 "/sys/devices/system/cpu/cpu1/online"
 #define SYS_CGOV_C1 "/sys/devices/system/cpu/cpu1/cpufreq/scaling_governor"
 #define SYS_CMAX_C1 "/sys/devices/system/cpu/cpu1/cpufreq/scaling_max_freq"
 #define SYS_CMIN_C1 "/sys/devices/system/cpu/cpu1/cpufreq/scaling_min_freq"
@@ -308,35 +307,6 @@ int check_batt_temp(int battery_temp)
 	return 0;
 }
 
-int wait_for_cpu1_online()
-{
-	struct stat file_info;
-	int i = 0;
-	while(0 != stat(SYS_CMAX_C1, &file_info) && i < 20) {
-		usleep(50000);
-		i++;
-	}
-	
-	if (i == 20)
-		return 1;
-
-	return 0;
-}
-
-int set_cpu1_online(int online)
-{
-	if (online) {
-		if (0 != wait_for_cpu1_online())
-			return 1;
-
-		write_to_file(SYS_ONLI_C1, "1");
-	}
-	else
-		write_to_file(SYS_ONLI_C1, "0");
-
-	return 0;
-}
-
 int main (int argc, char **argv)
 {
   ocConfig  conf;
@@ -454,9 +424,6 @@ int main (int argc, char **argv)
 				}
 			}
 		}
-			
-		if (0 != set_cpu1_online(1))
-			__android_log_write(ANDROID_LOG_INFO, APPNAME, "Failed setting awake profile for cpu1.");
 			
 		set_cpu_params(my_governor, my_min_freq, my_max_freq);
     }
