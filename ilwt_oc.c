@@ -43,6 +43,7 @@
 #define SYS_CHARGE "/sys/class/power_supply/battery/charging_enabled"
 
 #define APPNAME "ILWT_OC"
+#define APPVERSION "130"
 
 // 0: SD Card, 1: /system
 int configFile = 0;
@@ -309,124 +310,132 @@ int check_batt_temp(int battery_temp)
 
 int main (int argc, char **argv)
 {
-  ocConfig  conf;
-  pid_t pid, sid;
-  char input_buffer[9];
-  int asleep = 0;
-  int charging = 0;
-  int low_batt = 0;
-  int hot_batt = 0;
-  
-  __android_log_write(ANDROID_LOG_INFO, APPNAME, "Starting service.");
-  if (load_config(&conf) == -1)
-  {
-	if (configFile == 0) {
-		configFile = 1;
-		if (load_config(&conf) == -1) {
+	if (argc == 2) {
+		if (strncmp(argv[1], "-v", 2) == 0) {
+			__android_log_write(ANDROID_LOG_ERROR, APPNAME, "Getting ILWT OCD version");
+			printf(APPVERSION);
+		}	
+	}
+	else {
+	  ocConfig  conf;
+	  pid_t pid, sid;
+	  char input_buffer[9];
+	  int asleep = 0;
+	  int charging = 0;
+	  int low_batt = 0;
+	  int hot_batt = 0;
+	  
+	  __android_log_write(ANDROID_LOG_INFO, APPNAME, "Starting service.");
+	  if (load_config(&conf) == -1)
+	  {
+		if (configFile == 0) {
+			configFile = 1;
+			if (load_config(&conf) == -1) {
+				__android_log_write(ANDROID_LOG_ERROR, APPNAME, "Unable to load configuration. Stopping.");
+				return 1;
+			}
+		}
+		else {
 			__android_log_write(ANDROID_LOG_ERROR, APPNAME, "Unable to load configuration. Stopping.");
 			return 1;
 		}
-	}
-	else {
-		__android_log_write(ANDROID_LOG_ERROR, APPNAME, "Unable to load configuration. Stopping.");
-		return 1;
-	}
-  }
-  
-  input_buffer[0] = 0;
-    
-  pid = fork();
-  if (pid < 0)
-    exit(2);
-  if (pid > 0)
-    exit(0);
-  umask(0);
-  
-  sid = setsid();
-  if (sid < 0)
-    exit(2);
-  if ((chdir("/")) < 0)
-    exit(2);
-  close(STDIN_FILENO);
-  close(STDOUT_FILENO);
-  close(STDERR_FILENO);
-  
-  char* my_governor = conf.wake_governor;
-  char* my_min_freq = conf.wake_min_freq;
-  char* my_max_freq = conf.wake_max_freq;
-  
-  input_buffer[0] = '\0';
-  
-  if (read_from_file(SYS_WAKE, 6, input_buffer) == -1)
-  {                  
-    __android_log_write(ANDROID_LOG_ERROR, APPNAME, "Unable to get data from file. Cannot continue.");
-    return 1;
-  }
-  if (strcmp(input_buffer, "awake") == 0)
-  {
-    __android_log_write(ANDROID_LOG_INFO, APPNAME, "Setting awake profile for boot sequence.");
-    set_cpu_params(my_governor, my_min_freq, my_max_freq);
-  }
-	
-  while (1)
-  {
-	asleep = check_sleep();
-	
-	if (asleep == 2)
-    {
-      __android_log_write(ANDROID_LOG_INFO, APPNAME, "Setting sleep profile.");
-      set_cpu_params(conf.sleep_governor, conf.sleep_min_freq, conf.sleep_max_freq);
-    }
-	else if (asleep == 1)
-	{
+	  }
+	  
+	  input_buffer[0] = 0;
+		
+	  pid = fork();
+	  if (pid < 0)
+		exit(2);
+	  if (pid > 0)
+		exit(0);
+	  umask(0);
+	  
+	  sid = setsid();
+	  if (sid < 0)
+		exit(2);
+	  if ((chdir("/")) < 0)
+		exit(2);
+	  close(STDIN_FILENO);
+	  close(STDOUT_FILENO);
+	  close(STDERR_FILENO);
+	  
+	  char* my_governor = conf.wake_governor;
+	  char* my_min_freq = conf.wake_min_freq;
+	  char* my_max_freq = conf.wake_max_freq;
+	  
+	  input_buffer[0] = '\0';
+	  
+	  if (read_from_file(SYS_WAKE, 6, input_buffer) == -1)
+	  {                  
 		__android_log_write(ANDROID_LOG_ERROR, APPNAME, "Unable to get data from file. Cannot continue.");
 		return 1;
-	}
-  
-	input_buffer[0] = '\0';
-  
-    if (read_from_file(SYS_WAKE, 6, input_buffer) == -1) {                  
-      __android_log_write(ANDROID_LOG_ERROR, APPNAME, "Unable to get data from file. Cannot continue.");
-      return 1;
-    }
-    if (strcmp(input_buffer, "awake") == 0)
-    {
-		hot_batt = check_batt_temp(atoi(conf.battery_temp));
-	
-		if (hot_batt == 2) {
-			__android_log_write(ANDROID_LOG_INFO, APPNAME, "Setting heat profile.");
-			my_governor = conf.battery_temp_governor;
-			my_min_freq = conf.battery_temp_min_freq;
-			my_max_freq = conf.battery_temp_max_freq;
+	  }
+	  if (strcmp(input_buffer, "awake") == 0)
+	  {
+		__android_log_write(ANDROID_LOG_INFO, APPNAME, "Setting awake profile for boot sequence.");
+		set_cpu_params(my_governor, my_min_freq, my_max_freq);
+	  }
+		
+	  while (1)
+	  {
+		asleep = check_sleep();
+		
+		if (asleep == 2)
+		{
+		  __android_log_write(ANDROID_LOG_INFO, APPNAME, "Setting sleep profile.");
+		  set_cpu_params(conf.sleep_governor, conf.sleep_min_freq, conf.sleep_max_freq);
 		}
-		else {
-			charging = check_charge();
-			if (charging == 2) {
-				__android_log_write(ANDROID_LOG_INFO, APPNAME, "Setting charge profile.");
-				my_governor = conf.charge_governor;
-				my_min_freq = conf.charge_min_freq;
-				my_max_freq = conf.charge_max_freq;
+		else if (asleep == 1)
+		{
+			__android_log_write(ANDROID_LOG_ERROR, APPNAME, "Unable to get data from file. Cannot continue.");
+			return 1;
+		}
+	  
+		input_buffer[0] = '\0';
+	  
+		if (read_from_file(SYS_WAKE, 6, input_buffer) == -1) {                  
+		  __android_log_write(ANDROID_LOG_ERROR, APPNAME, "Unable to get data from file. Cannot continue.");
+		  return 1;
+		}
+		if (strcmp(input_buffer, "awake") == 0)
+		{
+			hot_batt = check_batt_temp(atoi(conf.battery_temp));
+		
+			if (hot_batt == 2) {
+				__android_log_write(ANDROID_LOG_INFO, APPNAME, "Setting heat profile.");
+				my_governor = conf.battery_temp_governor;
+				my_min_freq = conf.battery_temp_min_freq;
+				my_max_freq = conf.battery_temp_max_freq;
 			}
 			else {
-				low_batt = check_batt_cap(atoi(conf.battery_cap));
-				
-				if (low_batt == 2) {
-					__android_log_write(ANDROID_LOG_INFO, APPNAME, "Setting capacity profile.");
-					my_governor = conf.battery_cap_governor;
-					my_min_freq = conf.battery_cap_min_freq;
-					my_max_freq = conf.battery_cap_max_freq;
+				charging = check_charge();
+				if (charging == 2) {
+					__android_log_write(ANDROID_LOG_INFO, APPNAME, "Setting charge profile.");
+					my_governor = conf.charge_governor;
+					my_min_freq = conf.charge_min_freq;
+					my_max_freq = conf.charge_max_freq;
 				}
 				else {
-					__android_log_write(ANDROID_LOG_INFO, APPNAME, "Setting awake profile.");
-					my_governor = conf.wake_governor;
-					my_min_freq = conf.wake_min_freq;
-					my_max_freq = conf.wake_max_freq;
+					low_batt = check_batt_cap(atoi(conf.battery_cap));
+					
+					if (low_batt == 2) {
+						__android_log_write(ANDROID_LOG_INFO, APPNAME, "Setting capacity profile.");
+						my_governor = conf.battery_cap_governor;
+						my_min_freq = conf.battery_cap_min_freq;
+						my_max_freq = conf.battery_cap_max_freq;
+					}
+					else {
+						__android_log_write(ANDROID_LOG_INFO, APPNAME, "Setting awake profile.");
+						my_governor = conf.wake_governor;
+						my_min_freq = conf.wake_min_freq;
+						my_max_freq = conf.wake_max_freq;
+					}
 				}
 			}
+				
+			set_cpu_params(my_governor, my_min_freq, my_max_freq);
 		}
-			
-		set_cpu_params(my_governor, my_min_freq, my_max_freq);
-    }
+	  }
   }
  
   return 0;
