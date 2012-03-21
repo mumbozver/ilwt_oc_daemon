@@ -23,9 +23,18 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <android/log.h>
+#include <dirent.h>
 
 #define CONFIG_FILE "/system/ilwt/ilwt_oc.conf"
 #define CONFIG_FILE_SDCARD "/mnt/sdcard/ILWT/ilwt_oc.conf"
+
+//IOSCHED-CHANGE - start
+#define CONFIG_FILE_IO_SCHED "/system/ilwt/ilwt_io_sched.conf"
+#define CONFIG_FILE_SDCARD_IO_SCHED "/mnt/sdcard/ILWT/ilwt_io_sched.conf"
+
+#define IO_BLOCK_DEVICES_BASE_PATH "/sys/block/" 
+#define IO_SCHEDULER_RELATIVE_PATH "/queue/scheduler"
+//IOSCHED-CHANGE - end
 
 #define SYS_CGOV_C0 "/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor"
 #define SYS_CMAX_C0 "/sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq"
@@ -43,10 +52,11 @@
 #define SYS_CHARGE "/sys/class/power_supply/battery/charging_enabled"
 
 #define APPNAME "ILWT_OC"
-#define APPVERSION "130"
+#define APPVERSION "140"
 
 // 0: SD Card, 1: /system
 int configFile = 0;
+int io_configFile = 0;
 
 typedef struct s_ocConfig
 {
@@ -73,6 +83,13 @@ typedef struct s_ocConfig
   char charge_max_freq[30];
 } ocConfig;
 
+//IOSCHED-CHANGE - start
+typedef struct s_ioSchedConfig
+{
+  char io_scheduler[30];
+} ioSchedConfig;
+//IOSCHED-CHANGE - end
+
 void my_trim(char *str)
 {
   int i;
@@ -94,6 +111,42 @@ int write_to_file(char *path, char *value)
   fclose(fd);
   return res;
 }
+
+//IOSCHED-CHANGE - start
+int set_io_sched_params(char *scheduler)
+{
+    DIR *dir = opendir(IO_BLOCK_DEVICES_BASE_PATH);
+    if (NULL == dir)
+        return -1;
+
+    my_trim(scheduler);
+
+    struct dirent *dp; 
+    while ((dp=readdir(dir)) != NULL) {
+        if(0 == strncmp(dp->d_name, "mmcblk", strlen("mmcblk")) ||
+           0 == strncmp(dp->d_name, "bml", strlen("bml")) ||
+           0 == strncmp(dp->d_name, "stl", strlen("stl")) ||
+           0 == strncmp(dp->d_name, "tfsr", strlen("tfsr")) ) { 
+            __android_log_write(ANDROID_LOG_INFO, APPNAME, dp->d_name);
+            char final_path[1024];
+            memset(final_path, '\0',1024);
+            strcpy(final_path, IO_BLOCK_DEVICES_BASE_PATH);
+            strcat(final_path, dp->d_name);
+            strcat(final_path, IO_SCHEDULER_RELATIVE_PATH);
+            if(write_to_file(final_path, scheduler) != 0)
+	        return -1;
+        }
+    }
+    char buf[255];
+    buf[0] = 0;
+    strcat(buf, "Setting IO Scheduler: Scheduler=");
+    strcat(buf, scheduler);  
+    __android_log_write(ANDROID_LOG_INFO, APPNAME, buf);
+
+    closedir(dir);
+}
+//IOSCHED-CHANGE - end
+
 
 int set_cpu_params(char *governor, char *min_freq, char *max_freq)
 {
@@ -186,6 +239,65 @@ int get_config_value(char *config_key, char *reference)
 	}
     return res;
 }
+
+//IOSCHED-CHANGE - start
+int load_iosched_config(ioSchedConfig *io_conf)
+{
+        if (io_conf == NULL)
+            return -1;
+        if (io_configFile == 1)
+            __android_log_write(ANDROID_LOG_INFO, APPNAME, "Reading IO Scheduler config from system partition.");
+        else
+            __android_log_write(ANDROID_LOG_INFO, APPNAME, "Reading IO Schduler config from SD card.");
+
+        FILE *config_file;
+	if (io_configFile == 1)
+		config_file = fopen(CONFIG_FILE_IO_SCHED, "r");
+	else {
+		config_file = fopen(CONFIG_FILE_SDCARD_IO_SCHED, "r");
+		if (config_file == NULL) {
+			__android_log_write(ANDROID_LOG_INFO, APPNAME, "No IO Scheduler config file in SD card.");
+			config_file = fopen(CONFIG_FILE_IO_SCHED, "r");
+			io_configFile = 1;
+			__android_log_write(ANDROID_LOG_INFO, APPNAME, "Reading IO Scheduler config from system partition.");
+		}
+	}
+	
+	if (config_file == NULL) {
+		__android_log_write(ANDROID_LOG_INFO, APPNAME, "Cannot open IO Scheduler configuration file for input.");
+		config_file = fopen(CONFIG_FILE_IO_SCHED, "r");
+	}
+	
+	char line[30];
+	char log[40];
+	char temp[30];
+	int res = -1;
+        char * config_key = "io_scheduler=";
+	while (fgets(line, sizeof line, config_file)) {
+		if (strncmp(line, config_key, strlen (config_key)) == 0) {
+			strcpy(temp, config_key);
+			strcat(temp, "%s");
+			if (sscanf(line, temp, io_conf->io_scheduler)) {
+				strcpy(log, "Found ");
+				strcat(log, config_key);
+				strcat(log, io_conf->io_scheduler);
+				__android_log_write(ANDROID_LOG_INFO, APPNAME, log);
+				res = 0;
+				break;
+			}
+		}
+	}
+
+	fclose(config_file);
+	
+	if (res == -1) {
+		strcpy(log, "Could not find ");
+		strcat(log, config_key);
+		__android_log_write(ANDROID_LOG_INFO, APPNAME, log);
+	}
+        return res;
+}
+//IOSCHED-CHANGE - end
 
 int load_config(ocConfig *conf)
 {      
@@ -326,8 +438,7 @@ int main (int argc, char **argv)
 	  int hot_batt = 0;
 	  
 	  __android_log_write(ANDROID_LOG_INFO, APPNAME, "Starting service.");
-	  if (load_config(&conf) == -1)
-	  {
+	  if (load_config(&conf) == -1){
 		if (configFile == 0) {
 			configFile = 1;
 			if (load_config(&conf) == -1) {
@@ -340,6 +451,23 @@ int main (int argc, char **argv)
 			return 1;
 		}
 	  }
+
+          //IOSCHED-CHANGE - start
+          ioSchedConfig io_config;
+          if(load_iosched_config(&io_config) == -1){
+              if(io_configFile == 0) {
+                  io_configFile = 1;
+                  if(load_iosched_config(&io_config) == -1){
+                      __android_log_write(ANDROID_LOG_ERROR, APPNAME, "Unable to load io configuration. Stopping.");
+                      return 1;
+                  }
+              } else {
+                  __android_log_write(ANDROID_LOG_ERROR, APPNAME, "Unable to load io configuration. Stopping.");
+                  return 1;
+              }
+          }
+          //IOSCHED-CHANGE - end
+
 	  
 	  input_buffer[0] = 0;
 		
@@ -358,6 +486,9 @@ int main (int argc, char **argv)
 	  close(STDIN_FILENO);
 	  close(STDOUT_FILENO);
 	  close(STDERR_FILENO);
+
+          //IOSCHED-CHANGE
+          set_io_sched_params(io_config.io_scheduler);
 	  
 	  char* my_governor = conf.wake_governor;
 	  char* my_min_freq = conf.wake_min_freq;
@@ -375,7 +506,7 @@ int main (int argc, char **argv)
 		__android_log_write(ANDROID_LOG_INFO, APPNAME, "Setting awake profile for boot sequence.");
 		set_cpu_params(my_governor, my_min_freq, my_max_freq);
 	  }
-		
+
 	  while (1)
 	  {
 		asleep = check_sleep();
