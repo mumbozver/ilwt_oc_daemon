@@ -1,4 +1,5 @@
-More to be added here soon. Feel free to modify this code and distribute it at
-will. My preference would be that any improvements are submitted back to this
-project, so that all users can benefit from your improvements. To submit a
-change, fork the repo, apply your changes and issue a pull request.
+This fork from https://github.com/tsubus/ilwt_oc_daemon
+Goal is fight JXD S9000 Android 4.0.3 tablet touchscreen problems.
+(Allwinner A10 platform)
+By UNDERCLOCKING it, if battery low.
+So heavy customize profiles.

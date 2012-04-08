@@ -144,6 +144,7 @@ int set_io_sched_params(char *scheduler)
     __android_log_write(ANDROID_LOG_INFO, APPNAME, buf);
 
     closedir(dir);
+    return 0;
 }
 //IOSCHED-CHANGE - end
 
