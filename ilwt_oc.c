@@ -28,21 +28,12 @@
 #define CONFIG_FILE "/system/ilwt/ilwt_oc.conf"
 #define CONFIG_FILE_SDCARD "/mnt/sdcard/ILWT/ilwt_oc.conf"
 
-//IOSCHED-CHANGE - start
-#define CONFIG_FILE_IO_SCHED "/system/ilwt/ilwt_io_sched.conf"
-#define CONFIG_FILE_SDCARD_IO_SCHED "/mnt/sdcard/ILWT/ilwt_io_sched.conf"
-
 #define IO_BLOCK_DEVICES_BASE_PATH "/sys/block/" 
 #define IO_SCHEDULER_RELATIVE_PATH "/queue/scheduler"
-//IOSCHED-CHANGE - end
 
 #define SYS_CGOV_C0 "/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor"
 #define SYS_CMAX_C0 "/sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq"
 #define SYS_CMIN_C0 "/sys/devices/system/cpu/cpu0/cpufreq/scaling_min_freq"
-
-#define SYS_CGOV_C1 "/sys/devices/system/cpu/cpu1/cpufreq/scaling_governor"
-#define SYS_CMAX_C1 "/sys/devices/system/cpu/cpu1/cpufreq/scaling_max_freq"
-#define SYS_CMIN_C1 "/sys/devices/system/cpu/cpu1/cpufreq/scaling_min_freq"
 
 #define SYS_WAKE "/sys/power/wait_for_fb_wake"
 #define SYS_SLEEP "/sys/power/wait_for_fb_sleep"
@@ -52,43 +43,39 @@
 #define SYS_CHARGE "/sys/class/power_supply/battery/charging_enabled"
 
 #define APPNAME "ILWT_OC"
-#define APPVERSION "140"
+#define APPVERSION "150"
 
 // 0: SD Card, 1: /system
 int configFile = 0;
-int io_configFile = 0;
 
 typedef struct s_ocConfig
 {
-  char wake_min_freq[30];
-  char wake_max_freq[30];
-  char wake_governor[30];
+  char battery_high[30];
+  char battery_middle[30];
+  char battery_low[30];
+
+  char battery_high_min_freq[30];
+  char battery_high_max_freq[30];
+  char battery_high_governor[30];
+
+  char battery_middle_min_freq[30];
+  char battery_middle_max_freq[30];
+  char battery_middle_governor[30];
+
+  char battery_low_min_freq[30];
+  char battery_low_max_freq[30];
+  char battery_low_governor[30];
+
+  char battery_crit_min_freq[30];
+  char battery_crit_max_freq[30];
+  char battery_crit_governor[30];
 
   char sleep_min_freq[30];
   char sleep_max_freq[30];
   char sleep_governor[30];
   
-  char battery_temp[30];
-  char battery_temp_governor[30];
-  char battery_temp_min_freq[30];
-  char battery_temp_max_freq[30];
-  
-  char battery_cap[30];
-  char battery_cap_governor[30];
-  char battery_cap_min_freq[30];
-  char battery_cap_max_freq[30];
-  
-  char charge_governor[30];
-  char charge_min_freq[30];
-  char charge_max_freq[30];
-} ocConfig;
-
-//IOSCHED-CHANGE - start
-typedef struct s_ioSchedConfig
-{
   char io_scheduler[30];
-} ioSchedConfig;
-//IOSCHED-CHANGE - end
+} ocConfig;
 
 void my_trim(char *str)
 {
@@ -157,10 +144,6 @@ int set_cpu_params(char *governor, char *min_freq, char *max_freq)
       return -1;
     if (write_to_file(SYS_CMIN_C0, min_freq) != 0)
       return -1;
-
-    write_to_file(SYS_CGOV_C1, governor);
-    write_to_file(SYS_CMAX_C1, max_freq);
-    write_to_file(SYS_CMIN_C1, min_freq);
 
     char buf[255];
     buf[0] = 0;
@@ -241,65 +224,6 @@ int get_config_value(char *config_key, char *reference)
     return res;
 }
 
-//IOSCHED-CHANGE - start
-int load_iosched_config(ioSchedConfig *io_conf)
-{
-        if (io_conf == NULL)
-            return -1;
-        if (io_configFile == 1)
-            __android_log_write(ANDROID_LOG_INFO, APPNAME, "Reading IO Scheduler config from system partition.");
-        else
-            __android_log_write(ANDROID_LOG_INFO, APPNAME, "Reading IO Schduler config from SD card.");
-
-        FILE *config_file;
-	if (io_configFile == 1)
-		config_file = fopen(CONFIG_FILE_IO_SCHED, "r");
-	else {
-		config_file = fopen(CONFIG_FILE_SDCARD_IO_SCHED, "r");
-		if (config_file == NULL) {
-			__android_log_write(ANDROID_LOG_INFO, APPNAME, "No IO Scheduler config file in SD card.");
-			config_file = fopen(CONFIG_FILE_IO_SCHED, "r");
-			io_configFile = 1;
-			__android_log_write(ANDROID_LOG_INFO, APPNAME, "Reading IO Scheduler config from system partition.");
-		}
-	}
-	
-	if (config_file == NULL) {
-		__android_log_write(ANDROID_LOG_INFO, APPNAME, "Cannot open IO Scheduler configuration file for input.");
-		config_file = fopen(CONFIG_FILE_IO_SCHED, "r");
-	}
-	
-	char line[30];
-	char log[40];
-	char temp[30];
-	int res = -1;
-        char * config_key = "io_scheduler=";
-	while (fgets(line, sizeof line, config_file)) {
-		if (strncmp(line, config_key, strlen (config_key)) == 0) {
-			strcpy(temp, config_key);
-			strcat(temp, "%s");
-			if (sscanf(line, temp, io_conf->io_scheduler)) {
-				strcpy(log, "Found ");
-				strcat(log, config_key);
-				strcat(log, io_conf->io_scheduler);
-				__android_log_write(ANDROID_LOG_INFO, APPNAME, log);
-				res = 0;
-				break;
-			}
-		}
-	}
-
-	fclose(config_file);
-	
-	if (res == -1) {
-		strcpy(log, "Could not find ");
-		strcat(log, config_key);
-		__android_log_write(ANDROID_LOG_INFO, APPNAME, log);
-	}
-        return res;
-}
-//IOSCHED-CHANGE - end
-
 int load_config(ocConfig *conf)
 {      
   if (conf == NULL)
@@ -310,18 +234,39 @@ int load_config(ocConfig *conf)
   else
     __android_log_write(ANDROID_LOG_INFO, APPNAME, "Reading config from SD card.");
 	
-  if (get_config_value("wake_min_freq=", conf->wake_min_freq) == -1)
+  if (get_config_value("battery_high=", conf->battery_high) == -1)
     return -1;
-  if (get_config_value("wake_max_freq=", conf->wake_max_freq) == -1)
+  if (get_config_value("battery_middle=", conf->battery_middle) == -1)
     return -1;
-  if (get_config_value("wake_governor=", conf->wake_governor) == -1)
+  if (get_config_value("battery_low=", conf->battery_low) == -1)
     return -1;
 	
-   if (get_config_value("wake_min_freq=", conf->wake_min_freq) == -1)
+   if (get_config_value("battery_high_min_freq=", conf->battery_high_min_freq) == -1)
     return -1;
-  if (get_config_value("wake_max_freq=", conf->wake_max_freq) == -1)
+  if (get_config_value("battery_high_max_freq=", conf->battery_high_max_freq) == -1)
     return -1;
-  if (get_config_value("wake_governor=", conf->wake_governor) == -1)
+  if (get_config_value("battery_high_governor=", conf->battery_high_governor) == -1)
+    return -1;
+	
+   if (get_config_value("battery_middle_min_freq=", conf->battery_middle_min_freq) == -1)
+    return -1;
+  if (get_config_value("battery_middle_max_freq=", conf->battery_middle_max_freq) == -1)
+    return -1;
+  if (get_config_value("battery_middle_governor=", conf->battery_middle_governor) == -1)
+    return -1;
+
+   if (get_config_value("battery_low_min_freq=", conf->battery_low_min_freq) == -1)
+    return -1;
+  if (get_config_value("battery_low_max_freq=", conf->battery_low_max_freq) == -1)
+    return -1;
+  if (get_config_value("battery_low_governor=", conf->battery_low_governor) == -1)
+    return -1;
+
+   if (get_config_value("battery_crit_min_freq=", conf->battery_crit_min_freq) == -1)
+    return -1;
+  if (get_config_value("battery_crit_max_freq=", conf->battery_crit_max_freq) == -1)
+    return -1;
+  if (get_config_value("battery_crit_governor=", conf->battery_crit_governor) == -1)
     return -1;
 
   if (get_config_value("sleep_min_freq=", conf->sleep_min_freq) == -1)
@@ -331,29 +276,7 @@ int load_config(ocConfig *conf)
   if (get_config_value("sleep_governor=", conf->sleep_governor) == -1)
     return -1;
 	
-  if (get_config_value("battery_temp=", conf->battery_temp) == -1)
-    return -1;
-  if (get_config_value("battery_temp_min_freq=", conf->battery_temp_min_freq) == -1)
-    return -1;
-  if (get_config_value("battery_temp_max_freq=", conf->battery_temp_max_freq) == -1)
-    return -1;
-  if (get_config_value("battery_temp_governor=", conf->battery_temp_governor) == -1)
-    return -1;
-	
-  if (get_config_value("battery_cap=", conf->battery_cap) == -1)
-    return -1;
-  if (get_config_value("battery_cap_min_freq=", conf->battery_cap_min_freq) == -1)
-    return -1;
-  if (get_config_value("battery_cap_max_freq=", conf->battery_cap_max_freq) == -1)
-    return -1;
-  if (get_config_value("battery_cap_governor=", conf->battery_cap_governor) == -1)
-    return -1;
-	
-  if (get_config_value("charge_min_freq=", conf->charge_min_freq) == -1)
-    return -1;
-  if (get_config_value("charge_max_freq=", conf->charge_max_freq) == -1)
-    return -1;
-  if (get_config_value("charge_governor=", conf->charge_governor) == -1)
+  if (get_config_value("io_scheduler=", conf->io_scheduler) == -1)
     return -1;
 
   return 0;
@@ -452,23 +375,6 @@ int main (int argc, char **argv)
 			return 1;
 		}
 	  }
-
-          //IOSCHED-CHANGE - start
-          ioSchedConfig io_config;
-          if(load_iosched_config(&io_config) == -1){
-              if(io_configFile == 0) {
-                  io_configFile = 1;
-                  if(load_iosched_config(&io_config) == -1){
-                      __android_log_write(ANDROID_LOG_ERROR, APPNAME, "Unable to load io configuration. Stopping.");
-                      return 1;
-                  }
-              } else {
-                  __android_log_write(ANDROID_LOG_ERROR, APPNAME, "Unable to load io configuration. Stopping.");
-                  return 1;
-              }
-          }
-          //IOSCHED-CHANGE - end
-
 	  
 	  input_buffer[0] = 0;
 		
@@ -489,7 +395,7 @@ int main (int argc, char **argv)
 	  close(STDERR_FILENO);
 
           //IOSCHED-CHANGE
-          set_io_sched_params(io_config.io_scheduler);
+          set_io_sched_params(conf.io_scheduler);
 	  
 	  char* my_governor = conf.wake_governor;
 	  char* my_min_freq = conf.wake_min_freq;
