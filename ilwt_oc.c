@@ -312,7 +312,7 @@ int check_charge()
 	return 2;
 }
 
-int check_batt_cap(int battery_cap)
+int check_batt_cap()
 {
 	char input_buffer[4];
 	input_buffer[0] = '\0';	
@@ -322,26 +322,10 @@ int check_batt_cap(int battery_cap)
 		return 1;
 	}
 	  
-	if (atoi(input_buffer) <= battery_cap)
-	  return 2;
-	  
-	return 0;
-}
+	int level;
+	level = (atoi(input_buffer));
 
-int check_batt_temp(int battery_temp)
-{
-	char input_buffer[4];
-	input_buffer[0] = '\0';	
-	
-	if (read_from_file(SYS_BATT_TEMP, 4, input_buffer) == -1) {	
-	  __android_log_write(ANDROID_LOG_ERROR, APPNAME, "Unable to get battery temperature from file. Cannot check profile.");
-	  return 1;
-	}
-	
-	if (atoi(input_buffer) >= battery_temp)
-		return 2;
-		
-	return 0;
+	return level;
 }
 
 int main (int argc, char **argv)
@@ -358,8 +342,7 @@ int main (int argc, char **argv)
 	  char input_buffer[9];
 	  int asleep = 0;
 	  int charging = 0;
-	  int low_batt = 0;
-	  int hot_batt = 0;
+	  int batt_level = 0;
 	  
 	  __android_log_write(ANDROID_LOG_INFO, APPNAME, "Starting service.");
 	  if (load_config(&conf) == -1){
@@ -397,9 +380,9 @@ int main (int argc, char **argv)
           //IOSCHED-CHANGE
           set_io_sched_params(conf.io_scheduler);
 	  
-	  char* my_governor = conf.wake_governor;
-	  char* my_min_freq = conf.wake_min_freq;
-	  char* my_max_freq = conf.wake_max_freq;
+	  char* my_governor = conf.battery_high_governor;
+	  char* my_min_freq = conf.battery_high_min_freq;
+	  char* my_max_freq = conf.battery_high_max_freq;
 	  
 	  input_buffer[0] = '\0';
 	  
@@ -437,36 +420,33 @@ int main (int argc, char **argv)
 		}
 		if (strcmp(input_buffer, "awake") == 0)
 		{
-			hot_batt = check_batt_temp(atoi(conf.battery_temp));
+			batt_level = check_batt_cap();
 		
-			if (hot_batt == 2) {
-				__android_log_write(ANDROID_LOG_INFO, APPNAME, "Setting heat profile.");
-				my_governor = conf.battery_temp_governor;
-				my_min_freq = conf.battery_temp_min_freq;
-				my_max_freq = conf.battery_temp_max_freq;
+			if (batt_level >= conf.battery_high) {
+				__android_log_write(ANDROID_LOG_INFO, APPNAME, "Setting high profile.");
+				my_governor = conf.battery_high_governor;
+				my_min_freq = conf.battery_high_min_freq;
+				my_max_freq = conf.battery_high_max_freq;
 			}
 			else {
-				charging = check_charge();
-				if (charging == 2) {
-					__android_log_write(ANDROID_LOG_INFO, APPNAME, "Setting charge profile.");
-					my_governor = conf.charge_governor;
-					my_min_freq = conf.charge_min_freq;
-					my_max_freq = conf.charge_max_freq;
+				if (batt_level >= conf.battery_middle) {
+					__android_log_write(ANDROID_LOG_INFO, APPNAME, "Setting middle profile.");
+					my_governor = conf.battery_middle_governor;
+					my_min_freq = conf.battery_middle_min_freq;
+					my_max_freq = conf.battery_middle_max_freq;
 				}
-				else {
-					low_batt = check_batt_cap(atoi(conf.battery_cap));
-					
-					if (low_batt == 2) {
-						__android_log_write(ANDROID_LOG_INFO, APPNAME, "Setting capacity profile.");
-						my_governor = conf.battery_cap_governor;
-						my_min_freq = conf.battery_cap_min_freq;
-						my_max_freq = conf.battery_cap_max_freq;
+				else	{
+					if (batt_level >= conf.battery_low) {
+						__android_log_write(ANDROID_LOG_INFO, APPNAME, "Setting low profile.");
+						my_governor = conf.battery_low_governor;
+						my_min_freq = conf.battery_low_min_freq;
+						my_max_freq = conf.battery_low_max_freq;
 					}
 					else {
-						__android_log_write(ANDROID_LOG_INFO, APPNAME, "Setting awake profile.");
-						my_governor = conf.wake_governor;
-						my_min_freq = conf.wake_min_freq;
-						my_max_freq = conf.wake_max_freq;
+						__android_log_write(ANDROID_LOG_INFO, APPNAME, "Setting critical profile.");
+						my_governor = conf.battery_crit_governor;
+						my_min_freq = conf.battery_crit_min_freq;
+						my_max_freq = conf.battery_crit_max_freq;
 					}
 				}
 			}
